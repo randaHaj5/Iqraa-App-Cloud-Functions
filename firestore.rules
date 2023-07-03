@@ -1,0 +1,138 @@
+service cloud.firestore {
+  match /databases/{database}/documents {
+   
+    match /about/{aboutId}{
+    	allow read : if true;
+    }
+    function allowUpdateUser(userId){
+    	return request.auth.uid == userId 
+      && request.resource.data.uid == resource.data.uid;
+    }
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth.uid != null && !exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow delete : if request.auth.uid == userId;
+      allow write : if request.auth.uid == userId;
+      allow update : if allowUpdateUser(userId)  
+    }
+    
+    match /errors/{errorId} {
+      allow create: if true;
+      allow write: if true;
+      }
+    match /keys/{keyId} {
+      allow read: if true;
+      }
+     function isLoggedInUser(userId){
+     return request.auth.uid!=null && request.auth.uid==userId
+    }
+    
+     match /children/{parentId}{
+    	allow read : if true;
+      allow create : if isLoggedInUser(parentId);
+      allow write : if isLoggedInUser(parentId);
+      allow update : if isLoggedInUser(parentId) 
+    }
+     function isUserParentOf(ownerId){
+     return get(/databases/$(database)/documents/children/$(request.auth.uid)).data[ownerId] != null ||
+      get(/databases/$(database)/documents/children/$(request.auth.uid))[ownerId] != null
+     
+     }
+     match /bookmarks/{bookmarkOwnerId}{
+    	allow read : if true;
+      allow create : if isUserParentOf(bookmarkOwnerId);
+      allow write : if isUserParentOf(bookmarkOwnerId);
+      allow update : if isUserParentOf(bookmarkOwnerId) 
+    }
+     match /notes/{noteOwnerId}{
+    	allow read : if true;
+      allow create : if isUserParentOf(noteOwnerId);
+      allow write : if isUserParentOf(noteOwnerId);
+      allow update : if isUserParentOf(noteOwnerId) 
+    }
+    match /purchases/{parentId}{
+    	allow read : if true;
+      allow create : if isLoggedInUser(parentId);
+      allow write : if isLoggedInUser(parentId);
+      allow update : if isLoggedInUser(parentId) 
+    }
+    match /faqs/{faqId}{
+    	allow read : if true;
+      allow create : if isLoggedInUser();
+      allow write : if isLoggedInUser();
+      allow update : if isLoggedInUser() 
+    }
+    
+     
+match /Tracking/{TrackingOwnerId}{
+       allow read : if true;
+     allow create : if isUserParentOf(TrackingOwnerId);
+     allow write : if isUserParentOf(TrackingOwnerId);
+     allow update : if isUserParentOf(TrackingOwnerId);
+   }
+    match /tokens/{userId}{
+       allow read : if true;
+     allow create : if true  ;
+     allow write : if true  ;
+     allow update : if true ;
+   }
+ match /videos/{bookId}{
+       allow read : if true;
+       allow create: if true;
+       allow update : if true;
+       allow write : if true;
+       allow delete : if true;
+   }
+     match /book1Quizes/{bookId}{
+       allow read : if true;
+       allow create: if true;
+       allow update : if true;
+       allow write : if true;
+       allow delete : if true;
+   }
+     match /book2Quizes/{bookId}{
+       allow read : if true;
+       allow create: if true;
+       allow write: if true;
+       allow update : if true;
+       allow delete : if true;
+   }
+     match /book3Quizes/{bookId}{
+       allow read : if true;
+       allow create: if true;
+       allow update : if true;
+       allow write : if true;
+       allow delete : if true;
+   }
+     match /book4Quizes/{bookId}{
+       allow read : if true;
+       allow create: if true;
+       allow update : if true;
+       allow write : if true;
+       allow delete : if true;
+   }
+     match /book5Quizes/{bookId}{
+       allow read : if true;
+       allow create: if true;
+       allow update : if true;
+       allow write : if true;
+       allow delete : if true;
+   }
+     match /book6Quizes/{bookId}{
+       allow read : if true;
+       allow create: if true;
+       allow write: if true;
+       allow update : if true;
+       allow delete : if true;
+   }
+    match /LicenseKeys/{licenseKey}{
+    allow update: if true;
+    allow read: if true;
+    }
+    match /AppFlow/{recordId}{
+    allow update: if true;
+    allow read: if true;
+    allow write: if true;
+    }
+  }
+}
