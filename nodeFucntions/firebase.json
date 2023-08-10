@@ -4,6 +4,7 @@
     "indexes": "firestore.indexes.json"
   },
   "functions": {
+    "codebase": "iqraa-node-codebase",
     "predeploy": [
       "npm --prefix \"$RESOURCE_DIR\" run lint"
     ]

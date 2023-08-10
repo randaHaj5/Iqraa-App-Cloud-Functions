@@ -11,30 +11,31 @@ admin.initializeApp();
 exports.sendPublicNotification = functions.https.onRequest(
     (request, response) => {
       response.send(request.body);
-      // const newBody = JSON.parse(request.body);
-      // const title = newBody.title;
-      // const tokens = newBody.tokens;
-      // const body = newBody.body;
-      // const message = {
-      //   notification: {
-      //     title: title,
-      //     body: body,
-      //   },
-      //   data: {
-      //     title: title,
-      //     body: body,
-      //   },
-      // };
-      // admin
-      //     .messaging()
-      //     .sendToDevice(tokens, message)
-      //     .then((response) => {
-      //       // Response is a message ID string.
-      //       console.log("Successfully sent message:", response);
-      //     })
-      //     .catch((error) => {
-      //       console.log("Error sending message:", error);
-      //     });
+      console.log("~~~Sending public notification");
+      const newBody = JSON.parse(request.body);
+      const title = newBody.title;
+      const tokens = newBody.tokens;
+      const body = newBody.body;
+      const message = {
+        notification: {
+          title: title,
+          body: body,
+        },
+        data: {
+          title: title,
+          body: body,
+        },
+      };
+      admin
+          .messaging()
+          .sendToDevice(tokens, message)
+          .then((response) => {
+            // Response is a message ID string.
+            console.log("Successfully sent message:", response);
+          })
+          .catch((error) => {
+            console.log("Error sending message:", error);
+          });
     }
 );
 /**
