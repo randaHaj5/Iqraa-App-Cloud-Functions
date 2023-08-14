@@ -172,7 +172,7 @@ def delete_audio_file(input_file):
 
 
 @https_fn.on_request()
-def similarity(req: https_fn.Request) -> https_fn.Response:
+def detectVoice(req: https_fn.Request) -> https_fn.Response:
     text = req.args.get("text")
     url = req.args.get("url")
     remove = req.args.get("remove")
