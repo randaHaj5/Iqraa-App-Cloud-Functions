@@ -45,6 +45,9 @@ def assignUrl(url):
     if url == "https://api-inference.huggingface.co/models/tarteel-ai/whisper-base-ar-quran":
         api_url = "https://elina12-tarteel.hf.space/"
 
+    if url == "https://elina12-tarteel-test.hf.space/":
+        api_url = "https://elina12-tarteel-test.hf.space/"
+    
     if url == "https://api-inference.huggingface.co/models/jonatasgrosman/wav2vec2-large-xlsr-53-arabic":
         api_url = "https://elina12-asr-arabic.hf.space/"
 
