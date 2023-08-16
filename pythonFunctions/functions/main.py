@@ -34,7 +34,7 @@ def transcribe(url, filename):
             break
         except Exception as e:
             time.sleep(1)  # Add a short delay before retrying
-        return res
+    return res
 
 
 # method for assigning api_url
