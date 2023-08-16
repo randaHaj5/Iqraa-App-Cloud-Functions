@@ -10,10 +10,11 @@ import uuid
 import soundfile as sf
 from firebase_functions import https_fn
 import librosa
+import io
+from pydub import AudioSegment
 import numpy as np
 
 app = initialize_app()
-
 
 # method for transcribe audio for tarteel and jonatasgrosman space
 def transcribe1(url,filename):
@@ -34,7 +35,7 @@ def transcribe(url, filename):
             break
         except Exception as e:
             time.sleep(1)  # Add a short delay before retrying
-    return res
+        return res
 
 
 # method for assigning api_url
@@ -54,19 +55,27 @@ def assignUrl(url):
     return api_url
 
 # base64 to wav
-def save_audio_from_base64(encoded_audio_base64):
-    # Decode the base64 string to bytes
-    audio_bytes = base64.b64decode(encoded_audio_base64)
+def base64_to_wav(input_base64_file):
+    try:
+        with open(input_base64_file, 'r') as base64_file:
+            base64_string = base64_file.read()
 
-    # Generate a unique filename for the audio
-    unique_id = str(uuid.uuid4())[:8]
-    output_file = f'audio_{unique_id}.wav'
+            # Decode the base64 string to binary audio data
+            audio_data = base64.b64decode(base64_string)
 
-    # Save the audio to the new file
-    sf.write(output_file, audio_bytes, 16000)
+            # Convert binary audio data to AudioSegment
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
 
-    # Return the filename of the saved audio
-    return output_file
+            # Generate a unique ID for the filename
+            unique_id = str(uuid.uuid4())[:8]
+            output_wav_file = f'audio_{unique_id}.wav'
+
+            # Export the AudioSegment to MP3 format and save to the generated filename
+            audio_segment.export(output_wav_file, format="wav")
+
+            return output_wav_file
+    except Exception as e:
+        return False
 
 # denoise the audio
 def denoise_audio(audio_file):
@@ -181,7 +190,7 @@ def detectVoice(req: https_fn.Request) -> https_fn.Response:
     remove = req.args.get("remove")
     replace = req.args.get("replace")
     audio = req.args.get("audio")
-    audio = save_audio_from_base64(audio)
+    audio = base64_to_wav(audio)
     audio = denoise_audio(audio)
 
     word2 = text
