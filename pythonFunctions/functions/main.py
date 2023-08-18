@@ -10,10 +10,14 @@ import uuid
 import soundfile as sf
 from firebase_functions import https_fn
 import librosa
+import io
+from pydub import AudioSegment
 import numpy as np
+from firebase_admin import firestore
 
 app = initialize_app()
 
+db = firestore.client()
 
 # method for transcribe audio for tarteel and jonatasgrosman space
 def transcribe1(url,filename):
@@ -45,25 +49,36 @@ def assignUrl(url):
     if url == "https://api-inference.huggingface.co/models/tarteel-ai/whisper-base-ar-quran":
         api_url = "https://elina12-tarteel.hf.space/"
 
+    if url == "https://elina12-tarteel-test.hf.space/":
+        api_url = "https://elina12-tarteel-test.hf.space/"
+    
     if url == "https://api-inference.huggingface.co/models/jonatasgrosman/wav2vec2-large-xlsr-53-arabic":
         api_url = "https://elina12-asr-arabic.hf.space/"
 
     return api_url
 
 # base64 to wav
-def save_audio_from_base64(encoded_audio_base64):
-    # Decode the base64 string to bytes
-    audio_bytes = base64.b64decode(encoded_audio_base64)
+def base64_to_wav(input_base64_file):
+    try:
+        with open(input_base64_file, 'r') as base64_file:
+            base64_string = base64_file.read()
 
-    # Generate a unique filename for the audio
-    unique_id = str(uuid.uuid4())[:8]
-    output_file = f'audio_{unique_id}.wav'
+            # Decode the base64 string to binary audio data
+            audio_data = base64.b64decode(base64_string)
 
-    # Save the audio to the new file
-    sf.write(output_file, audio_bytes, 16000)
+            # Convert binary audio data to AudioSegment
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
 
-    # Return the filename of the saved audio
-    return output_file
+            # Generate a unique ID for the filename
+            unique_id = str(uuid.uuid4())[:8]
+            output_wav_file = f'audio_{unique_id}.wav'
+
+            # Export the AudioSegment to MP3 format and save to the generated filename
+            audio_segment.export(output_wav_file, format="wav")
+
+            return output_wav_file
+    except Exception as e:
+        return False
 
 # denoise the audio
 def denoise_audio(audio_file):
@@ -171,20 +186,61 @@ def delete_audio_file(input_file):
         os.remove(input_file)
 
 
-@https_fn.on_request()
-def similarity(req: https_fn.Request) -> https_fn.Response:
-    text = req.args.get("text")
-    url = req.args.get("url")
-    remove = req.args.get("remove")
-    replace = req.args.get("replace")
-    audio = req.args.get("audio")
-    audio = save_audio_from_base64(audio)
-    audio = denoise_audio(audio)
+def fetch_audio_data(book, page, audio_id):
+    collection_name = f"{book}_audio_reference"  # Construct collection name
+    # Construct document references
+    page_ref = db.collection(collection_name).document(page)
+    audio_ref = page_ref.collection("audios").document(audio_id)
 
+    # Get the audio document snapshot
+    audio_snapshot = audio_ref.get()
+
+    # Check if the document exists
+    if audio_snapshot.exists:
+        # Get the data fields from the snapshot
+        audio_data = audio_snapshot.to_dict()
+
+        # Access specific fields
+        text= audio_data.get("text")
+        url = audio_data.get("url")
+        rem = audio_data.get("remove")
+        rep = audio_data.get("replace")
+
+        return  text,url,rem, rep
+        
+    else:
+        return None  # Audio document does not exist
+
+
+
+@https_fn.on_request()
+def detectVoice(req: https_fn.Request) -> https_fn.Response:
+    
+    # Check if parameters exist
+    if "book" not in req.args:
+        return https_fn.Response("The 'book' parameter is missing", status_code=400)
+    if "page" not in req.args:
+        return https_fn.Response("The 'page' parameter is missing", status_code=400)
+    if "id" not in req.args:
+        return https_fn.Response("The 'id' parameter is missing", status_code=400)
+    if "audio" not in req.args:
+        return https_fn.Response("The 'audio' parameter is missing", status_code=400)
+     
+    # All required parameters are present, proceed with processing
+
+    book = req.args.get("book")
+    page = req.args.get("page")
+    id = req.args.get("id")
+    audio = req.args.get("audio")
+
+    # Continue with the rest of code
+    text,url,rem,rep= fetch_audio_data(book, page,id)
+    audio = base64_to_wav(audio)
+    audio = denoise_audio(audio)
     word2 = text
     api_url = assignUrl(url)
     word1 = transcribe(api_url, audio)
-    word1, word2 = process(remove, replace, word1, word2)
+    word1, word2 = process(rem, rep, word1, word2)
     similarity = compare_words(word1, word2)
     delete_audio_file(audio)
 
