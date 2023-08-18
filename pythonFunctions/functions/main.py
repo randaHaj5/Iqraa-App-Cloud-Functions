@@ -15,6 +15,7 @@ from pydub import AudioSegment
 import numpy as np
 from firebase_admin import firestore
 
+
 app = initialize_app()
 
 db = firestore.client()
@@ -191,7 +192,6 @@ def fetch_audio_data(book, page, audio_id):
     # Construct document references
     page_ref = db.collection(collection_name).document(page)
     audio_ref = page_ref.collection("audios").document(audio_id)
-
     # Get the audio document snapshot
     audio_snapshot = audio_ref.get()
 
