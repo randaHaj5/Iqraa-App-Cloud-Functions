@@ -6,28 +6,30 @@ import time
 import base64
 import Levenshtein
 import noisereduce as nr
-import uuid
+import tempfile
 import soundfile as sf
 from firebase_functions import https_fn
 import librosa
 import io
 from pydub import AudioSegment
 import numpy as np
+import google.cloud.firestore
 from firebase_admin import firestore
-
+import sys
+from io import StringIO
 
 app = initialize_app()
 
-db = firestore.client()
-
 # method for transcribe audio for tarteel and jonatasgrosman space
-def transcribe1(url,filename):
+def transcribe1(url, filename):
+    # Redirect stdout to a dummy stream
+    original_stdout = sys.stdout
+    sys.stdout = StringIO()
     client = Client(url)
     result = client.predict(
-        # str (filepath or URL to file) in 'Input' Audio component
-        filename,
-        api_name="/predict"
-    )
+            filename,
+            api_name="/predict"
+        )
     return result
 
 
@@ -39,7 +41,7 @@ def transcribe(url, filename):
             break
         except Exception as e:
             time.sleep(1)  # Add a short delay before retrying
-        return res
+    return res
 
 
 # method for assigning api_url
@@ -58,28 +60,25 @@ def assignUrl(url):
 
     return api_url
 
-# base64 to wav
-def base64_to_wav(input_base64_file):
+def base64_to_audio_and_export(base64_string):
     try:
-        with open(input_base64_file, 'r') as base64_file:
-            base64_string = base64_file.read()
+          audio_data = base64.b64decode(base64_string)
+          
+          # Convert binary audio data to AudioSegment
+          audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
 
-            # Decode the base64 string to binary audio data
-            audio_data = base64.b64decode(base64_string)
+          # Create a temporary named file-like object with a random name and .wav extension
+          temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
 
-            # Convert binary audio data to AudioSegment
-            audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
+          # Export the AudioSegment to the temporary file-like object in WAV format
+          audio_segment.export(temp_file, format="wav")
 
-            # Generate a unique ID for the filename
-            unique_id = str(uuid.uuid4())[:8]
-            output_wav_file = f'audio_{unique_id}.wav'
+          # Close the file-like object after exporting
+          temp_file.close()
 
-            # Export the AudioSegment to MP3 format and save to the generated filename
-            audio_segment.export(output_wav_file, format="wav")
-
-            return output_wav_file
+          return temp_file.name
     except Exception as e:
-        return False
+      return e
 
 # denoise the audio
 def denoise_audio(audio_file):
@@ -190,7 +189,8 @@ def delete_audio_file(input_file):
 def fetch_audio_data(book, page, audio_id):
     collection_name = f"{book}_audio_reference"  # Construct collection name
     # Construct document references
-    page_ref = db.collection(collection_name).document(page)
+    firestore_client: google.cloud.firestore.Client = firestore.client()
+    page_ref = firestore_client.collection(collection_name).document(page)
     audio_ref = page_ref.collection("audios").document(audio_id)
     # Get the audio document snapshot
     audio_snapshot = audio_ref.get()
@@ -215,33 +215,36 @@ def fetch_audio_data(book, page, audio_id):
 
 @https_fn.on_request()
 def detectVoice(req: https_fn.Request) -> https_fn.Response:
-    
-    # Check if parameters exist
-    if "book" not in req.args:
-        return https_fn.Response("The 'book' parameter is missing", status_code=400)
-    if "page" not in req.args:
-        return https_fn.Response("The 'page' parameter is missing", status_code=400)
-    if "id" not in req.args:
-        return https_fn.Response("The 'id' parameter is missing", status_code=400)
-    if "audio" not in req.args:
-        return https_fn.Response("The 'audio' parameter is missing", status_code=400)
+    try:
+        # Check if parameters exist
+        if "book" not in req.args:
+            return https_fn.Response("The 'book' parameter is missing", status=400)
+        if "page" not in req.args:
+            return https_fn.Response("The 'page' parameter is missing", status=400)
+        if "id" not in req.args:
+            return https_fn.Response("The 'id' parameter is missing", status=400)
+        if "audio" not in req.args:
+            return https_fn.Response("The 'audio' parameter is missing", status=400)
      
-    # All required parameters are present, proceed with processing
+        # All required parameters are present, proceed with processing
+        book = req.args.get("book")
+        page = req.args.get("page")
+        id = req.args.get("id")
+        audio = req.args.get("audio")
 
-    book = req.args.get("book")
-    page = req.args.get("page")
-    id = req.args.get("id")
-    audio = req.args.get("audio")
+        # # Continue with the rest of the code
+        text, url, rem, rep = fetch_audio_data(book, page, id)
+        audio = base64_to_audio_and_export(audio)
+        audio = denoise_audio(audio)
+        word2 = text
+        api_url = assignUrl(url)
+        word1 = transcribe(api_url, audio)
+        word1, word2 = process(rem, rep, word1, word2)
+        similarity = compare_words(word1, word2)
+        delete_audio_file(audio)
 
-    # Continue with the rest of code
-    text,url,rem,rep= fetch_audio_data(book, page,id)
-    audio = base64_to_wav(audio)
-    audio = denoise_audio(audio)
-    word2 = text
-    api_url = assignUrl(url)
-    word1 = transcribe(api_url, audio)
-    word1, word2 = process(rem, rep, word1, word2)
-    similarity = compare_words(word1, word2)
-    delete_audio_file(audio)
+        return https_fn.Response(similarity)
 
-    return https_fn.Response(similarity)
+    except Exception as e:
+        error_message = f"An error occurred: {e}"
+        return https_fn.Response(error_message, status=500)
