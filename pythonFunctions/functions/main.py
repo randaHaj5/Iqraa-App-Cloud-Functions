@@ -10,22 +10,20 @@ import tempfile
 import soundfile as sf
 from firebase_functions import https_fn
 import librosa
-import io
-from pydub import AudioSegment
-import numpy as np
+import numpy as np 
 import google.cloud.firestore
 from firebase_admin import firestore
 import sys
 from io import StringIO
 
+
 app = initialize_app()
 
 # method for transcribe audio for tarteel and jonatasgrosman space
-def transcribe1(url, filename):
+def transcribe1(url, filename,api_key):
     # Redirect stdout to a dummy stream
-    original_stdout = sys.stdout
     sys.stdout = StringIO()
-    client = Client(url)
+    client = Client(url,hf_token=api_key)
     result = client.predict(
             filename,
             api_name="/predict"
@@ -34,12 +32,13 @@ def transcribe1(url, filename):
 
 
 # transcribe audio based on url
-def transcribe(url, filename):
+def transcribe(url, filename,api_key):
     while True:
         try:
-            res=transcribe1(url,filename)
+            res=transcribe1(url,filename,api_key)
             break
         except Exception as e:
+            print("loading..")
             time.sleep(1)  # Add a short delay before retrying
     return res
 
@@ -48,37 +47,33 @@ def transcribe(url, filename):
 def assignUrl(url):
     if url == "https://tarteel-ai-quicklabeler.hf.space/":
         api_url = "https://elina12-tarteel.hf.space/"
+        api_key = "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"
 
     if url == "https://api-inference.huggingface.co/models/tarteel-ai/whisper-base-ar-quran":
         api_url = "https://elina12-tarteel.hf.space/"
-
-    if url == "https://elina12-tarteel-test.hf.space/":
-        api_url = "https://elina12-tarteel-test.hf.space/"
+        api_key = "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"
     
     if url == "https://api-inference.huggingface.co/models/jonatasgrosman/wav2vec2-large-xlsr-53-arabic":
         api_url = "https://elina12-asr-arabic.hf.space/"
+        api_key="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"
 
-    return api_url
+    return api_url,api_key
 
+#base64 to audio
 def base64_to_audio_and_export(base64_string):
     try:
-          audio_data = base64.b64decode(base64_string)
-          
-          # Convert binary audio data to AudioSegment
-          audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
+        # Decode base64 string to bytes
+        decoded_bytes = base64.b64decode(base64_string)
+        
+        # Create a temporary MP4 file
+        temp_mp3_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        temp_mp3_file.write(decoded_bytes)
+        temp_mp3_file.close()
 
-          # Create a temporary named file-like object with a random name and .wav extension
-          temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        return temp_mp3_file.name
 
-          # Export the AudioSegment to the temporary file-like object in WAV format
-          audio_segment.export(temp_file, format="wav")
-
-          # Close the file-like object after exporting
-          temp_file.close()
-
-          return temp_file.name
     except Exception as e:
-      return e
+        return str(e)
 
 # denoise the audio
 def denoise_audio(audio_file):
@@ -131,13 +126,18 @@ def replace_letter_combinations(text):
         'سا': 'س',
         'شا': 'ش',
         'صا': 'ص',
+        'صو':'ص',
         'ضا': 'ض',
+        'ضو': 'ض',
         'طا': 'ط',
-        'ظا': 'ظ',
+        'طو': 'ط',
+        'ظو': 'ظ',
         'عا': 'ع',
         'غا': 'غ',
+        'غو': 'غ',
         'فا': 'ف',
         'قا': 'ق',
+        'قو': 'ق',
         'كا': 'ك',
         'لا': 'ل',
         'ما': 'م',
@@ -212,39 +212,43 @@ def fetch_audio_data(book, page, audio_id):
         return None  # Audio document does not exist
 
 
-
+# @storage_fn.on_object_finalized(timeout_sec=60, memory=options.MemoryOption.MB_512)   
 @https_fn.on_request()
 def detectVoice(req: https_fn.Request) -> https_fn.Response:
     try:
-        # Check if parameters exist
-        if "book" not in req.args:
-            return https_fn.Response("The 'book' parameter is missing", status=400)
-        if "page" not in req.args:
-            return https_fn.Response("The 'page' parameter is missing", status=400)
-        if "id" not in req.args:
-            return https_fn.Response("The 'id' parameter is missing", status=400)
-        if "audio" not in req.args:
-            return https_fn.Response("The 'audio' parameter is missing", status=400)
-     
-        # All required parameters are present, proceed with processing
-        book = req.args.get("book")
-        page = req.args.get("page")
-        id = req.args.get("id")
-        audio = req.args.get("audio")
+        req_data = req.json  # Parse the JSON from the request body
+        
+        # Check if required parameters exist
+        required_params = ["book", "page", "id", "audio"]
+        for param in required_params:
+            if param not in req_data:
+                return https_fn.Response(f'{{"error": "The \'{param}\' parameter is missing"}}', status=400)
 
-        # # Continue with the rest of the code
+
+        # All required parameters are present
+        book = req_data["book"]
+        page = req_data["page"]
+        id = req_data["id"]
+        audio = req_data["audio"]
+    
         text, url, rem, rep = fetch_audio_data(book, page, id)
+        print("before base64_2_audio")
         audio = base64_to_audio_and_export(audio)
+        print("after base64_2_audio")
         audio = denoise_audio(audio)
+        print("after denoise_audio")
         word2 = text
-        api_url = assignUrl(url)
-        word1 = transcribe(api_url, audio)
+        api_url,api_key = assignUrl(url)
+        print("before transcribe")
+        word1 = transcribe(api_url, audio,api_key)
+        print("after transcribe")
         word1, word2 = process(rem, rep, word1, word2)
+        print("before compare words")
         similarity = compare_words(word1, word2)
+        print("after compare words")
         delete_audio_file(audio)
-
-        return https_fn.Response(similarity)
+        return https_fn.Response('{{"similarity": {}}}'.format(similarity))
 
     except Exception as e:
-        error_message = f"An error occurred: {e}"
+        error_message = f'{{"error": "An error occurred: {e}"}}'
         return https_fn.Response(error_message, status=500)
